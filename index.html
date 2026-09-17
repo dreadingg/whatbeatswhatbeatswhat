@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>what beats... what?</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f7f5f0;
+            color: #4a4a4a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .title {
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: #333333;
+            letter-spacing: 0.3px;
+            text-align: center;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            font-size: 0.85rem;
+            color: #888888;
+            padding: 0 5px;
+        }
+        .top-bar span { color: #333333; font-weight: 600; }
+
+        .mode-buttons { display: flex; gap: 8px; width: 100%; }
+        .mode-buttons button {
+            flex: 1;
+            padding: 10px;
+            font-size: 0.8rem;
+            background-color: #ffffff;
+            color: #666666;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .mode-buttons button.active { background-color: #333333; color: #ffffff; border-color: #333333; }
+        .mode-buttons button:hover:not(.active) { border-color: #999999; }
+
+        .turn-indicator {
+            font-size: 0.85rem;
+            color: #888888;
+            text-align: center;
+            width: 100%;
+        }
+        .turn-indicator span { color: #333333; font-weight: 600; }
+
+        .game-area {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 16px;
+            padding: 25px;
+            width: 100%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .prompt-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #999999;
+            text-align: center;
+        }
+
+        .current-item {
+            text-align: center;
+            font-size: 1.8rem;
+            color: #333333;
+            font-weight: 500;
+            min-height: 2.5rem;
+            word-wrap: break-word;
+        }
+
+        .input-row { display: flex; gap: 8px; }
+        .input-row input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            color: #333333;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .input-row input:focus { border-color: #999999; }
+        .input-row input:disabled { background-color: #fafafa; color: #bbbbbb; }
+        .input-row button {
+            padding: 12px 20px;
+            background-color: #333333;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .input-row button:hover:not(:disabled) { background-color: #555555; }
+        .input-row button:disabled { background-color: #cccccc; cursor: not-allowed; }
+
+        .message-display {
+            font-size: 0.85rem;
+            color: #999999;
+            text-align: center;
+            min-height: 2.4em;
+            line-height: 1.5;
+        }
+        .message-display.win { color: #4a7c59; }
+        .message-display.lose { color: #a35c5c; }
+        .message-display.thinking { color: #888888; font-style: italic; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">what beats... what?</div>
+
+        <div class="top-bar">
+            <div>Score: <span id="score">0</span></div>
+            <div>High: <span id="highScore">0</span></div>
+        </div>
+
+        <div class="mode-buttons">
+            <button id="btnSolo" class="active" onclick="setMode('solo')">Solo</button>
+            <button id="btnMulti" onclick="setMode('multi')">Multiplayer</button>
+        </div>
+
+        <div class="turn-indicator hidden" id="turnIndicator">Player 1's turn</div>
+
+        <div class="game-area">
+            <div class="prompt-label">What beats</div>
+            <div class="current-item" id="currentItem">rock</div>
+
+            <div class="input-row">
+                <input type="text" id="guessInput" placeholder="Type your answer..." autocomplete="off" maxlength="60">
+                <button id="submitBtn" onclick="submitGuess()">Go</button>
+            </div>
+
+            <div class="message-display" id="message">Type something that beats "rock"</div>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME STATE ---
+        const STARTING_ITEM = "rock";
+        let previousItem = STARTING_ITEM;
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('whatBeatsWhatHighScore')) || 0;
+        let gameOver = false;
+        let mode = 'solo';
+        let currentPlayer = 1;
+        let isThinking = false; // Hard lock for race conditions
+
+        const currentItemDisplay = document.getElementById('currentItem');
+        const guessInput = document.getElementById('guessInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const message = document.getElementById('message');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const turnIndicator = document.getElementById('turnIndicator');
+
+        // --- AI JUDGE ---
+        async function askAI(previous, guess) {
+            const prompt = `You are the strict judge of a game called "What Beats Rock".
+Current item: "${previous}"
+Player's answer: "${guess}"
+Does "${guess}" logically, creatively, or humorously beat "${previous}"?
+Reply with ONLY one word: "yes" or "no". No punctuation. No explanation.`;
+
+            try {
+                const response = await fetch('https://text.pollinations.ai/openai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'openai',
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.7
+                    })
+                });
+
+                if (!response.ok) throw new Error("AI server error");
+
+                const data = await response.json();
+                const answer = data.choices[0].message.content.trim().toLowerCase();
+
+                // Only count as a win if the response STARTS with "yes"
+                return answer.startsWith('yes');
+            } catch (error) {
+                console.error("AI Error:", error);
+                return null; // null = error, not a loss
+            }
+        }
+
+        // --- MODE SWITCHING ---
+        function setMode(newMode) {
+            if (isThinking) return;
+            mode = newMode;
+            document.getElementById('btnSolo').classList.toggle('active', mode === 'solo');
+            document.getElementById('btnMulti').classList.toggle('active', mode === 'multi');
+            resetGame();
+
+            if (mode === 'multi') {
+                turnIndicator.classList.remove('hidden');
+            } else {
+                turnIndicator.classList.add('hidden');
+            }
+        }
+
+        function resetGame() {
+            previousItem = STARTING_ITEM;
+            score = 0;
+            gameOver = false;
+            currentPlayer = 1;
+            isThinking = false;
+            scoreDisplay.textContent = "0";
+            currentItemDisplay.textContent = previousItem;
+            message.textContent = `Type something that beats "${previousItem}"`;
+            message.className = "message-display";
+            guessInput.value = "";
+            guessInput.disabled = false;
+            submitBtn.disabled = false;
+            if (mode === 'multi') turnIndicator.innerHTML = `Player <span>1</span>'s turn`;
+            guessInput.focus();
+        }
+
+        function updateHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('whatBeatsWhatHighScore', highScore);
+                highScoreDisplay.textContent = highScore;
+            }
+        }
+
+        // --- SUBMIT GUESS ---
+        async function submitGuess() {
+            if (gameOver || isThinking) return;
+
+            const guess = guessInput.value.trim().toLowerCase();
+            if (!guess) return; // Don't send empty inputs
+
+            isThinking = true;
+            guessInput.disabled = true;
+            submitBtn.disabled = true;
+            message.textContent = "AI is thinking...";
+            message.className = "message-display thinking";
+
+            const aiSaidYes = await askAI(previousItem, guess);
+
+            if (aiSaidYes === null) {
+                // AI failed to respond
+                message.textContent = "AI is busy. Try again in a moment.";
+                message.className = "message-display lose";
+                isThinking = false;
+                guessInput.disabled = false;
+                submitBtn.disabled = false;
+                return;
+            }
+
+            if (aiSaidYes) {
+                // WIN
+                const oldItem = previousItem;
+                previousItem = guess;
+                score++;
+                updateHighScore();
+                scoreDisplay.textContent = score;
+
+                currentItemDisplay.textContent = guess;
+                message.textContent = `"${guess}" beats "${oldItem}". What beats "${guess}"?`;
+                message.className = "message-display win";
+                guessInput.value = "";
+
+                if (mode === 'multi') {
+                    currentPlayer = currentPlayer === 1 ? 2 : 1;
+                    turnIndicator.innerHTML = `Player <span>${currentPlayer}</span>'s turn`;
+                }
+            } else {
+                // LOSS
+                message.textContent = `"${guess}" does not beat "${previousItem}". Game Over.`;
+                message.className = "message-display lose";
+                gameOver = true;
+            }
+
+            isThinking = false;
+            guessInput.disabled = false;
+            submitBtn.disabled = false;
+            if (!gameOver) guessInput.focus();
+        }
+
+        // Press Enter to submit
+        guessInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitGuess();
+            }
+        });
+
+        // Initialize
+        highScoreDisplay.textContent = highScore;
+        resetGame();
+    </script>
+</body>
+</html>
